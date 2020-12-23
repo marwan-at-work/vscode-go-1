@@ -6,9 +6,11 @@
 'use strict';
 
 import cp = require('child_process');
+import { lang } from 'moment';
 import vscode = require('vscode');
 import { toolExecutionEnvironment } from './goEnv';
 import { promptForMissingTool } from './goInstallTools';
+import { AddImportRequest, KnownPackagesRequest, languageClient } from './goLanguageServer';
 import { documentSymbols, GoOutlineImportsOptions } from './goOutline';
 import { getImportablePackages } from './goPackages';
 import { getBinPath, getImportPath, parseFilePrelude } from './util';
@@ -37,6 +39,22 @@ export async function listPackages(excludeImportedPkgs: boolean = false): Promis
 	return [...stdLibs.sort(), ...nonStdLibs.sort()];
 }
 
+async function golist(): Promise<string[]> {
+	const editor = vscode.window.activeTextEditor;
+	if (editor && languageClient && !languageClient.needsStart() ) {
+		try {
+			const document = languageClient.code2ProtocolConverter.asTextDocumentIdentifier(editor.document);
+			const resp = await languageClient.sendRequest(KnownPackagesRequest.type, { textDocument: document });
+			return resp;
+		} catch (error) {
+			console.log(error);
+		}
+	}
+	// fallback to gopkgs, once/if deprecated we can show
+	// an error message about gopls not being turned on instead.
+	return listPackages(true);
+}
+
 /**
  * Returns the imported packages in the given file
  *
@@ -62,7 +80,7 @@ async function getImports(document: vscode.TextDocument): Promise<string[]> {
 
 async function askUserForImport(): Promise<string | undefined> {
 	try {
-		const packages = await listPackages(true);
+		const packages = await golist();
 		return vscode.window.showQuickPick(packages);
 	} catch (err) {
 		if (typeof err === 'string' && err.startsWith(missingToolMsg)) {
@@ -128,15 +146,21 @@ export function addImport(arg: { importPath: string; from: string }) {
 		return;
 	}
 	const p = arg && arg.importPath ? Promise.resolve(arg.importPath) : askUserForImport();
-	p.then((imp) => {
+	p.then(async (imp) => {
 		if (!imp) {
 			return;
 		}
-		const edits = getTextEditForAddImport(imp);
-		if (edits && edits.length > 0) {
-			const edit = new vscode.WorkspaceEdit();
-			edit.set(editor.document.uri, edits);
-			vscode.workspace.applyEdit(edit);
+		const editor = vscode.window.activeTextEditor;
+		if (editor) {
+			try {
+				const document = languageClient.code2ProtocolConverter.asTextDocumentIdentifier(editor.document);
+				await languageClient.sendRequest(AddImportRequest.type, {
+					textDocument: document,
+					importPath: imp,
+				});
+			} catch (error) {
+				vscode.window.showErrorMessage(`could not add improt: ${error}`);
+			}
 		}
 	});
 }

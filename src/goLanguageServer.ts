@@ -24,11 +24,14 @@ import {
 	HandleDiagnosticsSignature,
 	InitializeError,
 	Message,
+	ProtocolRequestType,
 	ProvideCodeLensesSignature,
 	ProvideCompletionItemsSignature,
 	ProvideDocumentLinksSignature,
 	ResponseError,
-	RevealOutputChannelOn
+	RevealOutputChannelOn,
+	TextDocumentIdentifier,
+	WorkDoneProgressParams
 } from 'vscode-languageclient';
 import {
 	LanguageClient
@@ -66,6 +69,25 @@ import {
 } from './util';
 import { getToolFromToolPath } from './utils/pathUtils';
 
+interface KnownPackagesRequestParams {
+	textDocument: TextDocumentIdentifier;
+}
+
+export namespace KnownPackagesRequest {
+	export const method: 'gopls/knownPackages' = 'gopls/knownPackages';
+	export const type = new ProtocolRequestType<KnownPackagesRequestParams, never, never, void, void>(method);
+}
+
+interface AddImportRequestParams extends WorkDoneProgressParams {
+	textDocument: TextDocumentIdentifier;
+	importPath: string;
+}
+
+export namespace AddImportRequest {
+	export const method: 'gopls/addImport' = 'gopls/addImport';
+	export const type = new ProtocolRequestType<AddImportRequestParams, never, never, void, void>(method);
+}
+
 export interface LanguageServerConfig {
 	serverName: string;
 	path: string;
@@ -84,7 +106,7 @@ export interface LanguageServerConfig {
 // Global variables used for management of the language client.
 // They are global so that the server can be easily restarted with
 // new configurations.
-let languageClient: LanguageClient;
+export let languageClient: LanguageClient;
 let languageServerDisposable: vscode.Disposable;
 let latestConfig: LanguageServerConfig;
 export let serverOutputChannel: vscode.OutputChannel;
